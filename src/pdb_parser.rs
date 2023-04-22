@@ -4,25 +4,27 @@ use std::io::{BufRead, BufReader};
 
 #[derive(Debug, Clone)]
 pub struct Structure {
-    models: Vec<Model>,
+    pub models: Vec<Model>,
+    pub chains: Vec<Chain>,
+}
+
+impl PartialEq for Structure {
+    fn eq(&self, other: &Self) -> bool {
+        self.models.len() == other.models.len()
+            && self.models.iter().zip(other.models.iter()).all(|(a, b)| a == b)
+            && self.chains.len() == other.chains.len()
+            && self.chains.iter().zip(other.chains.iter()).all(|(a, b)| a == b)
+    }
 }
 
 impl Structure {
     pub fn new() -> Self {
         Structure {
             models: Vec::new(),
+            chains: Vec::new(),
         }
     }
 }
-
-impl PartialEq for Model {
-    fn eq(&self, other: &Self) -> bool {
-        self.serial_number == other.serial_number
-            && self.chains == other.chains
-    }
-}
-
-impl Eq for Model {}
 
 #[derive(Debug, Clone)]
 pub struct Model {
@@ -30,11 +32,29 @@ pub struct Model {
     pub chains: Vec<Chain>,
 }
 
+impl PartialEq for Model {
+    fn eq(&self, other: &Self) -> bool {
+        self.serial_number == other.serial_number
+            && self.chains.iter().zip(other.chains.iter()).all(|(a, b)| a == b)
+    }
+}
+
+impl Eq for Model {}
+
 #[derive(Debug, Clone)]
 pub struct Chain {
     pub id: char,
     pub residues: Vec<Residue>,
 }
+
+impl PartialEq for Chain {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.residues.len() == other.residues.len()
+            && self.residues.iter().zip(other.residues.iter()).all(|(a, b)| a == b)
+    }
+}
+
 
 #[derive(Debug, Clone)]
 pub struct Residue {
@@ -43,7 +63,15 @@ pub struct Residue {
     pub atoms: Vec<Atom>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd)]
+impl PartialEq for Residue {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.id == other.id
+            && self.atoms.iter().zip(other.atoms.iter()).all(|(a, b)| a == b)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Atom {
     pub serial: isize,
     pub name: String,
@@ -61,11 +89,29 @@ pub struct Atom {
     pub charge: String,
 }
 
-pub fn parse_pdb_file(file_path: &str) -> Result<Structure, Box<dyn Error>> {
-    let file = File::open(file_path)?;
-    let reader = BufReader::new(file);
-    let mut structure = Structure::new();
+impl PartialEq for Atom {
+    fn eq(&self, other: &Self) -> bool {
+        self.serial == other.serial
+            && self.name == other.name
+            && self.alt_loc == other.alt_loc
+            && self.res_name == other.res_name
+            && self.chain_id == other.chain_id
+            && self.res_seq == other.res_seq
+            && self.icode == other.icode
+            && (self.x - other.x).abs() < f32::EPSILON
+            && (self.y - other.y).abs() < f32::EPSILON
+            && (self.z - other.z).abs() < f32::EPSILON
+            && (self.occupancy - other.occupancy).abs() < f32::EPSILON
+            && (self.temp_factor - other.temp_factor).abs() < f32::EPSILON
+            && self.element == other.element
+            && self.charge == other.charge
+    }
+}
 
+
+pub fn parse_pdb_file(file_content: &str) -> Result<Structure, Box<dyn Error>> {
+    let reader = BufReader::new(file_content.as_bytes());
+    let mut structure = Structure::new();
     let mut current_model = Model {
         serial_number: 1,
         chains: Vec::new(),
@@ -82,13 +128,15 @@ pub fn parse_pdb_file(file_path: &str) -> Result<Structure, Box<dyn Error>> {
         atoms: Vec::new(),
     };
 
-    for line in reader.lines() {
-        let record_type = &line?.chars().take(6).collect::<String>();
-
+    for result_line in reader.lines() {
+        let line = result_line?;
+        let record_type = line.chars().take(6).collect::<String>();
+        //println!("Line: {}", line);
         match record_type.as_ref() {
+            // A new model is encountered
             "MODEL " => {
                 current_model = Model {
-                    serial_number: line?
+                    serial_number: line
                         .chars()
                         .skip(10)
                         .take(4)
@@ -97,68 +145,101 @@ pub fn parse_pdb_file(file_path: &str) -> Result<Structure, Box<dyn Error>> {
                         .parse::<isize>()?,
                     chains: Vec::new(),
                 };
+                //println!("New model encountered: {:?}", current_model);
             }
+            // An atom is encountered
             "ATOM  " | "HETATM" => {
-    let atom = Atom {
-        serial: line?.chars().skip(6).take(5).collect::<String>().trim().parse()?,
-        name: line?.chars().skip(12).take(4).collect(),
-        alt_loc: line?.chars().nth(16).unwrap_or(' '),
-        res_name: line?.chars().skip(17).take(3).collect(),
-        chain_id: line?.chars().nth(21).unwrap_or(' '),
-        res_seq: line?.chars().skip(22).take(4).collect::<String>().trim().parse()?,
-        icode: line?.chars().nth(26).unwrap_or(' '),
-        x: line?.chars().skip(30).take(8).collect::<String>().trim().parse()?,
-        y: line?.chars().skip(38).take(8).collect::<String>().trim().parse()?,
-        z: line?.chars().skip(46).take(8).collect::<String>().trim().parse()?,
-        occupancy: line?.chars().skip(54).take(6).collect::<String>().trim().parse()?,
-        temp_factor: line?.chars().skip(60).take(6).collect::<String>().trim().parse()?,
-        element: line?.chars().skip(76).take(2).collect(),
-        charge: line?.chars().skip(78).take(2).collect(),
-    };
-    if let Some(index) = current_chain.residues.iter().position(|r| r.id == current_residue.id) {
-        // residue exists, add atom to it
-        current_chain.residues[index].atoms.push(atom);
-    } else {
-        // residue does not exist, create new residue and add atom to it
-        current_residue.atoms.push(atom);
+                let atom = Atom {
+                    serial: line.chars().skip(6).take(5).collect::<String>().trim().parse()?,
+                    name: line.chars().skip(12).take(4).collect(),
+                    alt_loc: line.chars().nth(16).unwrap_or(' '),
+                    res_name: line.chars().skip(17).take(3).collect(),
+                    chain_id: line.chars().nth(21).unwrap_or(' '),
+                    res_seq: line.chars().skip(22).take(4).collect::<String>().trim().parse()?,
+                    icode: line.chars().nth(26).unwrap_or(' '),
+                    x: line.chars().skip(30).take(8).collect::<String>().trim().parse()?,
+                    y: line.chars().skip(38).take(8).collect::<String>().trim().parse()?,
+                    z: line.chars().skip(46).take(8).collect::<String>().trim().parse()?,
+                    occupancy: line.chars().skip(54).take(6).collect::<String>().trim().parse()?,
+                    temp_factor: line.chars().skip(60).take(6).collect::<String>().trim().parse()?,
+                    element: line.chars().skip(76).take(2).collect(),
+                    charge: line.chars().skip(78).take(2).collect(),
+                };
+                //println!("Atom encountered: {:?}", atom);
+
+                // Check if the current residue exists in the current chain
+                if let Some(index) = current_chain.residues.iter().position(|r| r.id == current_residue.id) {
+                    // If the residue exists, add the atom to it
+                    current_chain.residues[index].atoms.push(atom.clone());
+                } else {
+                    // If the residue does not exist, create a new residue and add the atom to it
+                    current_residue.atoms.push(atom.clone());
+                    current_chain.residues.push(current_residue.clone());
+                }
+
+                // Update the current residue's ID and name
+                current_residue.id = atom.res_seq;
+                current_residue.name = atom.res_name.clone();
+                //println!("Current residue updated: {:?}", current_residue);
+            }
+            // A chain terminator is encountered
+            "TER   " => {
+                current_chain.residues.push(current_residue.clone());
+                current_model.chains.push(current_chain.clone());
+                //println!("TER encountered: current_chain: {:?}", current_chain);
+                current_chain = Chain {
+                    id: ' ',
+                    residues: Vec::new(),
+                };
+                //println!("Resetting current_chain: {:?}", current_chain);
+            }
+
+            "ENDMDL" => {
+                current_chain.residues.push(current_residue.clone());
+                current_model.chains.push(current_chain.clone());
+                //println!("ENDMDL encountered: current_model: {:?}", current_model);
+
+                // Push the current model to the structure
+                structure.models.push(current_model.clone());
+
+                // Reset the current_residue, current_chain, and current_model after pushing them to the structure
+                current_residue = Residue {
+                    name: String::new(),
+                    id: 0,
+                    atoms: Vec::new(),
+                };
+                current_chain = Chain {
+                    id: ' ',
+                    residues: Vec::new(),
+                };
+                current_model = Model {
+                    serial_number: current_model.serial_number + 1,
+                    chains: Vec::new(),
+                };
+                //println!("Resetting current_residue, current_chain, and current_model");
+            }
+            _ => (),
+        }
+    }
+    // Check if the current residue has any atoms and add it to the current chain
+    if !current_residue.atoms.is_empty() {
         current_chain.residues.push(current_residue.clone());
     }
-    current_residue.id = atom.res_seq;
-    current_residue.name = atom.res_name.clone();
-},
-"TER   " => {
-    current_chain.residues.push(current_residue.clone());
-    current_model.chains.push(current_chain.clone());
-    current_residue = Residue {
-        name: String::new(),
-        id: 0,
-        atoms: Vec::new(),
-    };
-    current_chain = Chain {
-        id: ' ',
-        residues: Vec::new(),
-    };
-},
-"ENDMDL" => {
-    current_chain.residues.push(current_residue.clone());
-    current_model.chains.push(current_chain.clone());
-    structure.models.push(current_model.clone());
-    current_residue = Residue {
-        name: String::new(),
-        id: 0,
-        atoms: Vec::new(),
-    };
-    current_chain = Chain {
-        id: ' ',
-        residues: Vec::new(),
-    };
-    current_model = Model {
-        serial_number: current_model.serial_number + 1,
-        chains: Vec::new(),
-    };
-},
-_ => (),
+
+    // Check if the current chain has any residues and add it to the current model
+    if !current_chain.residues.is_empty() {
+        current_model.chains.push(current_chain.clone());
+    }
+
+    // Check if the current model has any chains and add it to the structure
+    if !current_model.chains.is_empty() {
+        structure.models.push(current_model.clone());
+    }
+
+    Ok(structure)
 }
+
+
 
 
 

@@ -1,10 +1,13 @@
 use std::env;
+use std::error::Error;
 use std::path::Path;
+use std::io::{BufRead, BufReader};
+use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
 use reqwest;
 use std::convert::TryInto;
-use pp2predictor::pdb_parser::{parse_pdb_file, Atom, Chain, Model, Residue};
+use pp2predictor::pdb_parser::{parse_pdb_file, Structure};
 
 
 const DATABASE_FOLDER: &str = "pdb_files";
@@ -34,22 +37,28 @@ fn main() {
     let _input_pdb_file = download_or_load_pdb(&input_pdb_given, &input_pdb_file_path);
 
     // Read the content of the PDB file
+    let file_content = fs::read_to_string(&input_pdb_file_path).expect("Error reading PDB file");
+
     // Parse the content of the PDB file
     let query_structures =
-        parse_pdb_file(&input_pdb_file_path).expect("Error parsing PDB file");
+        parse_pdb_file(&file_content).expect("Error parsing PDB file");
     println!("Structures: {:?}", query_structures);
 
-    for model in &query_structures {
-        for chain in &model.chains {
-            for residue in &chain.residues {
-                for atom in &residue.atoms {
-                    // Remove the condition
-                    println!("Atom: {:?}", atom);
+    for (model_index, model) in query_structures.models.iter().enumerate() {
+        //println!("Model {}: {:?}", model_index + 1, model);
+        for (chain_index, chain) in model.chains.iter().enumerate() {
+            //println!("  Chain {}: {:?}", chain_index + 1, chain);
+            for (residue_index, residue) in chain.residues.iter().enumerate() {
+                //println!("    Residue {}: {:?}", residue_index + 1, residue);
+                for (atom_index, atom) in residue.atoms.iter().enumerate() {
+                    println!("      Atom {}: {:?}", atom_index + 1, atom);
+                     println!(" Booyah");
                 }
             }
         }
     }
 }
+
 
 
 fn download_or_load_pdb(pdb_id: &str, pdb_file_path: &str) -> File {
@@ -58,21 +67,23 @@ fn download_or_load_pdb(pdb_id: &str, pdb_file_path: &str) -> File {
     let alternative_path = Path::new(&alternative_pdb_file_path);
 
     if path.exists() {
+        println!("Found PDB file at path: {:?}", &path);
         File::open(&path).expect("Error opening PDB file")
     } else if alternative_path.exists() {
+        println!("Found alternative PDB file at path: {:?}", &alternative_path);
         File::open(&alternative_path).expect("Error opening alternative PDB file")
     } else {
+        println!("Downloading PDB file from URL: https://files.rcsb.org/download/{}.pdb", pdb_id);
         let pdb_url = format!("https://files.rcsb.org/download/{}.pdb", pdb_id);
         let response = reqwest::blocking::get(&pdb_url).expect("Error downloading PDB file");
         let mut file = std::fs::File::create(&path).expect("Error creating PDB file");
 
         file.write_all(response.text().unwrap().as_bytes())
             .expect("Error writing PDB file");
-
+        println!("PDB file downloaded and saved at path: {:?}", &path);
         file
     }
 }
-
 
 
 
