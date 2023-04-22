@@ -1,4 +1,0 @@
-Structure {
-    models: [],
-    chains: [],
-}

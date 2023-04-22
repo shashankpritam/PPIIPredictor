@@ -1,6 +1,8 @@
 use std::error::Error;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, BufWriter};
+use std::io::{Result, Write};
+
 
 #[derive(Debug, Clone)]
 pub struct Structure {
@@ -240,9 +242,6 @@ pub fn parse_pdb_file(file_content: &str) -> Result<Structure, Box<dyn Error>> {
 }
 
 
-
-
-
 pub fn parse_atom(line: &str) -> Atom {
     let serial: isize = line[6..11].trim().parse().unwrap();
     let name = line[12..16].trim().to_string();
@@ -275,4 +274,39 @@ pub fn parse_atom(line: &str) -> Atom {
         element,
         charge,
     }
+}
+
+
+
+pub fn write_pdb(structure: &Structure, writer: &mut dyn Write) -> Result<()> {
+    for model in &structure.models {
+        write!(writer, "MODEL {:>4}\n", model.serial_number)?;
+        for chain in &model.chains {
+            write!(writer, "CHAIN {:>2} \n", chain.id)?;
+            for residue in &chain.residues {
+                write!(writer, "RESIDUE {:>3} {:<3} {:>4}\n", residue.id, residue.name, chain.id)?;
+                for atom in &residue.atoms {
+                    write!(
+                        writer,
+                        "ATOM  {:>5} {:<4} {:>3} {} {}{:>4}    {:>8.3} {:>8.3} {:>8.3}  {:>6.2} {:>6.2}          {:>2}{:>2}\n",
+                        atom.serial,
+                        atom.name,
+                        residue.name,
+                        chain.id,
+                        residue.id,
+                        atom.icode,
+                        atom.x,
+                        atom.y,
+                        atom.z,
+                        atom.occupancy,
+                        atom.temp_factor,
+                        atom.element,
+                        atom.charge
+                    )?;
+                }
+            }
+        }
+        write!(writer, "ENDMDL\n")?;
+    }
+    Ok(())
 }
