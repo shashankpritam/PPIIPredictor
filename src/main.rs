@@ -1,12 +1,13 @@
 use std::env;
 use std::error::Error;
 use std::path::Path;
-use std::io::{BufReader, BufRead, Write, BufWriter};
+use std::io::{BufReader, BufRead, Read, Write, BufWriter};
 use std::fs::{self, File, create_dir_all};
 use std::process::Command;
 
 use reqwest;
-use crate::pdb_parser::{parse_pdb_file, Structure, Model, Chain, Residue, Atom, write_pdb};
+use pp2predictor::pdb_parser::{parse_pdb_file, Structure, Model, Chain, Residue, Atom, write_pdb};
+
 
 
 
@@ -385,14 +386,15 @@ pub fn carve(
 ) -> Result<(), Box<dyn Error>> {
     // Open input file
     let input_file = File::open(input_file_path)?;
-    let input_content = BufReader::new(input_file);
-
-    // Parse PDB file into a Structure
+    let mut input_content = String::new();
+    let mut reader = BufReader::new(input_file);
+    reader.read_to_string(&mut input_content)?;
     let structure = parse_pdb_file(&input_content)?;
 
     // Filter the structure based on the given chain IDs and residue IDs
     let mut filtered_structure = Structure {
         models: Vec::new(),
+        chains: Vec::new(),
     };
     for model in structure.models {
         let mut chains = Vec::new();
@@ -400,7 +402,7 @@ pub fn carve(
             if chain_ids.contains(&chain.id) {
                 let mut residues = Vec::new();
                 for residue in chain.residues {
-                    if residue_ids.contains(&residue.id) {
+                    if residue_ids.contains(&(residue.id as i32)) {
                         residues.push(residue);
                     }
                 }

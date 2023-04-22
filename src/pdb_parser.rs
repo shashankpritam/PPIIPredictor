@@ -1,7 +1,5 @@
-use std::error::Error;
-use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter};
-use std::io::{Result, Write};
+use std::io::{BufRead, BufReader, Write};
+use anyhow::{Result as AnyResult, Error as AnyhowError};
 
 
 #[derive(Debug, Clone)]
@@ -111,7 +109,9 @@ impl PartialEq for Atom {
 }
 
 
-pub fn parse_pdb_file(file_content: &str) -> Result<Structure, Box<dyn Error>> {
+
+
+pub fn parse_pdb_file(file_content: &str) -> AnyResult<Structure> {
     let reader = BufReader::new(file_content.as_bytes());
     let mut structure = Structure::new();
     let mut current_model = Model {
@@ -131,9 +131,9 @@ pub fn parse_pdb_file(file_content: &str) -> Result<Structure, Box<dyn Error>> {
     };
 
     for result_line in reader.lines() {
-        let line = result_line?;
+        let line = result_line.map_err(AnyhowError::new)?;
         let record_type = line.chars().take(6).collect::<String>();
-        //println!("Line: {}", line);
+
         match record_type.as_ref() {
             // A new model is encountered
             "MODEL " => {
@@ -144,7 +144,8 @@ pub fn parse_pdb_file(file_content: &str) -> Result<Structure, Box<dyn Error>> {
                         .take(4)
                         .collect::<String>()
                         .trim()
-                        .parse::<isize>()?,
+                        .parse::<isize>()
+                        .map_err(AnyhowError::new)?,
                     chains: Vec::new(),
                 };
                 //println!("New model encountered: {:?}", current_model);
@@ -152,18 +153,18 @@ pub fn parse_pdb_file(file_content: &str) -> Result<Structure, Box<dyn Error>> {
             // An atom is encountered
             "ATOM  " | "HETATM" => {
                 let atom = Atom {
-                    serial: line.chars().skip(6).take(5).collect::<String>().trim().parse()?,
+                    serial: line.chars().skip(6).take(5).collect::<String>().trim().parse().map_err(AnyhowError::new)?,
                     name: line.chars().skip(12).take(4).collect(),
                     alt_loc: line.chars().nth(16).unwrap_or(' '),
                     res_name: line.chars().skip(17).take(3).collect(),
                     chain_id: line.chars().nth(21).unwrap_or(' '),
-                    res_seq: line.chars().skip(22).take(4).collect::<String>().trim().parse()?,
+                    res_seq: line.chars().skip(22).take(4).collect::<String>().trim().parse().map_err(Box::new)?,
                     icode: line.chars().nth(26).unwrap_or(' '),
-                    x: line.chars().skip(30).take(8).collect::<String>().trim().parse()?,
-                    y: line.chars().skip(38).take(8).collect::<String>().trim().parse()?,
-                    z: line.chars().skip(46).take(8).collect::<String>().trim().parse()?,
-                    occupancy: line.chars().skip(54).take(6).collect::<String>().trim().parse()?,
-                    temp_factor: line.chars().skip(60).take(6).collect::<String>().trim().parse()?,
+                    x: line.chars().skip(30).take(8).collect::<String>().trim().parse().map_err(Box::new)?,
+                    y: line.chars().skip(38).take(8).collect::<String>().trim().parse().map_err(Box::new)?,
+                    z: line.chars().skip(46).take(8).collect::<String>().trim().parse().map_err(Box::new)?,
+                    occupancy: line.chars().skip(54).take(6).collect::<String>().trim().parse().map_err(Box::new)?,
+                    temp_factor: line.chars().skip(60).take(6).collect::<String>().trim().parse().map_err(Box::new)?,
                     element: line.chars().skip(76).take(2).collect(),
                     charge: line.chars().skip(78).take(2).collect(),
                 };
@@ -278,7 +279,7 @@ pub fn parse_atom(line: &str) -> Atom {
 
 
 
-pub fn write_pdb(structure: &Structure, writer: &mut dyn Write) -> Result<()> {
+pub fn write_pdb(structure: &Structure, writer: &mut dyn Write) -> AnyResult<()> {
     for model in &structure.models {
         write!(writer, "MODEL {:>4}\n", model.serial_number)?;
         for chain in &model.chains {
