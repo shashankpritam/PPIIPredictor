@@ -1,12 +1,15 @@
 use std::io::{BufRead, BufReader, Write};
 use anyhow::{Result as AnyResult, Error as AnyhowError};
-
+use kiddo::fixed::kdtree::KdTree;
+use kiddo::distance::squared_euclidean;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct Structure {
     pub models: Vec<Model>,
     pub chains: Vec<Chain>,
 }
+
 
 impl PartialEq for Structure {
     fn eq(&self, other: &Self) -> bool {
@@ -71,7 +74,7 @@ impl PartialEq for Residue {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Atom {
     pub serial: isize,
     pub name: String,
@@ -311,3 +314,32 @@ pub fn write_pdb(structure: &Structure, writer: &mut dyn Write) -> AnyResult<()>
     }
     Ok(())
 }
+
+
+pub struct NeighborSearch {
+    kdt: KdTree<[f64; 3], Arc<Atom>, 3, 32, u32>,
+}
+
+impl NeighborSearch {
+    pub fn new(atoms: &[Atom]) -> Self {
+        let coords: Vec<[f64; 3]> = atoms
+            .iter()
+            .map(|atom| [atom.x as f64, atom.y as f64, atom.z as f64])
+            .collect();
+        let atoms = atoms.iter().map(|a| Arc::new(a.clone())).collect();
+        let kdt = KdTree::new(&coords, atoms).unwrap();
+        Self { kdt }
+    }
+
+    pub fn search_neighbors(&self, query: &Atom, radius: f64) -> Vec<Arc<Atom>> {
+        let coords = [query.x as f64, query.y as f64, query.z as f64];
+        let neighbors = self.kdt
+            .within(&coords, radius, &squared_euclidean)
+            .unwrap()
+            .iter()
+            .map(|item| item.1.clone())
+            .collect();
+        neighbors
+    }
+}
+

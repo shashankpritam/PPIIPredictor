@@ -7,7 +7,29 @@ use std::process::Command;
 
 use reqwest;
 use pp2predictor::pdb_parser::{parse_pdb_file, Structure, Model, Chain, Residue, Atom, write_pdb};
+use std::f32::consts::PI;
+use std::rc::Rc;
+use std::collections::HashSet;
 
+let donor_dict: HashSet<(&str, &str)> = [
+    ("ARG", "NE"),
+    ("ARG", "NH1"),
+    ("ARG", "NH2"),
+    ("ASN", "ND2"),
+    ("ASX", "ND2"),
+    ("CYS", "SG"),
+    ("GLN", "NE2"),
+    ("GLX", "NE2"),
+    ("HIS", "ND1"),
+    ("HSE", "NE2"),
+    ("HSP", "ND1"),
+    ("HSP", "NE2"),
+    ("LYS", "NZ"),
+    ("SER", "OG"),
+    ("THR", "OG1"),
+    ("TRP", "NE1"),
+    ("TYR", "OH"),
+].iter().cloned().collect();
 
 
 
@@ -430,4 +452,95 @@ pub fn carve(
     write_pdb(&filtered_structure, &mut output_pdb_file)?;
 
     Ok(())
+}
+
+
+
+
+fn neighbour_search(structure: &Structure, neighbourhood_look_up_cut_off: f32, h_bond_cut_off: f32) {
+    let donor_dict: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    // ... populate donor_dict with relevant data
+
+    for model in &structure.models {
+        for chain in &model.chains {
+            for residue in &chain.residues {
+                if residue.name == "TRP" {
+                    let the_ne1_atom = residue.get_atom_by_name("NE1").unwrap();
+                    println!(
+                        "Residue Tryptophan is present at: {:?}",
+                        the_ne1_atom.get_full_id()
+                    );
+
+                    let chain_atoms: Vec<Rc<Atom>> = model.get_atoms().into_iter().map(Rc::new).collect();
+                    let neighbourhood_search = NeighborSearch::new(&chain_atoms, neighbourhood_look_up_cut_off as usize);
+                    let neighbour_atoms = neighbourhood_search.search(the_ne1_atom.coord, neighbourhood_look_up_cut_off);
+
+                    for n_atom in &neighbour_atoms {
+                        let mut rejection_list = vec![];
+                        let atom_dic = (n_atom.parent_residue.name.clone(), n_atom.name.clone());
+                        if Rc::ptr_eq(n_atom, &the_ne1_atom) || !donor_dict.contains(&atom_dic) {
+                            continue;
+                        }
+
+                        let internal_look_up = neighbourhood_search.search(n_atom.coord, h_bond_cut_off);
+
+                        for internal_atoms in &internal_look_up {
+                            if !Rc::ptr_eq(internal_atoms, n_atom) {
+                                // ... process internal_atoms
+                            }
+                        }
+
+                        if !rejection_list.contains(n_atom) {
+                            // ... process n_atom
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+fn neighbour_search(structure: &Structure, neighbourhood_look_up_cut_off: f32, h_bond_cut_off: f32) {
+    let donor_dict: HashSet<(String, String)> = [
+        // ... populate donor_dict with relevant data
+    ].iter().cloned().collect();
+
+    for model in &structure.models {
+        for chain in &model.chains {
+            for residue in &chain.residues {
+                if residue.name == "TRP" {
+                    let the_ne1_atom = residue.get_atom_by_name("NE1").unwrap();
+                    println!(
+                        "Residue Tryptophan is present at: {:?}",
+                        the_ne1_atom.get_full_id()
+                    );
+
+                    let chain_atoms: Vec<Rc<Atom>> = model.get_atoms().into_iter().map(Rc::new).collect();
+                    let neighbourhood_search = NeighborSearch::new(&chain_atoms, neighbourhood_look_up_cut_off as usize);
+                    let neighbour_atoms = neighbourhood_search.search(the_ne1_atom.coord, neighbourhood_look_up_cut_off);
+
+                    for n_atom in &neighbour_atoms {
+                        let mut rejection_list = vec![];
+                        let atom_dic = (n_atom.parent_residue.name.clone(), n_atom.name.clone());
+                        if Rc::ptr_eq(n_atom, &the_ne1_atom) || !donor_dict.contains(&atom_dic) {
+                            continue;
+                        }
+
+                        let internal_look_up = neighbourhood_search.search(n_atom.coord, h_bond_cut_off);
+
+                        for internal_atoms in &internal_look_up {
+                            if !Rc::ptr_eq(internal_atoms, n_atom) {
+                                // ... process internal_atoms
+                            }
+                        }
+
+                        if !rejection_list.contains(n_atom) {
+                            // ... process n_atom
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
