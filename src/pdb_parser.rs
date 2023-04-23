@@ -1,15 +1,15 @@
 use std::io::{BufRead, BufReader, Write};
 use anyhow::{Result as AnyResult, Error as AnyhowError};
-use kiddo::fixed::kdtree::KdTree;
-use kiddo::distance::squared_euclidean;
+use kdtree::distance::squared_euclidean;
+use kdtree::KdTree;
 use std::sync::Arc;
+use cgmath::{Point3, EuclideanSpace};
 
 #[derive(Debug, Clone)]
 pub struct Structure {
     pub models: Vec<Model>,
     pub chains: Vec<Chain>,
 }
-
 
 impl PartialEq for Structure {
     fn eq(&self, other: &Self) -> bool {
@@ -57,7 +57,6 @@ impl PartialEq for Chain {
             && self.residues.iter().zip(other.residues.iter()).all(|(a, b)| a == b)
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct Residue {
@@ -111,6 +110,25 @@ impl PartialEq for Atom {
     }
 }
 
+impl Residue {
+    pub fn get_atom_by_name(&self, name: &str) -> Option<&Atom> {
+        self.atoms.iter().find(|atom| atom.name == name)
+    }
+}
+
+impl Model {
+    pub fn get_atoms(&self) -> Vec<&Atom> {
+        self.chains
+            .iter()
+            .flat_map(|chain| chain.residues.iter())
+            .flat_map(|residue| residue.atoms.iter())
+            .collect()
+    }
+
+    pub fn get_atom_by_name(&self, name: &str) -> Option<&Atom> {
+        self.get_atoms().into_iter().find(|&atom| atom.name == name)
+    }
+}
 
 
 
@@ -316,8 +334,11 @@ pub fn write_pdb(structure: &Structure, writer: &mut dyn Write) -> AnyResult<()>
 }
 
 
+
+
+
 pub struct NeighborSearch {
-    kdt: KdTree<[f64; 3], Arc<Atom>, 3, 32, u32>,
+    kdtree: KdTree<f64, Arc<Atom>, [f64; 3]>,
 }
 
 impl NeighborSearch {
@@ -326,20 +347,26 @@ impl NeighborSearch {
             .iter()
             .map(|atom| [atom.x as f64, atom.y as f64, atom.z as f64])
             .collect();
-        let atoms = atoms.iter().map(|a| Arc::new(a.clone())).collect();
-        let kdt = KdTree::new(&coords, atoms).unwrap();
-        Self { kdt }
+        let atoms: Vec<Arc<Atom>> = atoms.iter().map(|a| Arc::new(a.clone())).collect();
+        let mut kdtree = KdTree::new(3);
+
+        for (index, coord) in coords.iter().enumerate() {
+            kdtree.add(*coord, atoms[index].clone()).unwrap();
+        }
+
+        Self { kdtree }
     }
 
     pub fn search_neighbors(&self, query: &Atom, radius: f64) -> Vec<Arc<Atom>> {
-        let coords = [query.x as f64, query.y as f64, query.z as f64];
-        let neighbors = self.kdt
-            .within(&coords, radius, &squared_euclidean)
+        let query_coords: [f64; 3] = [query.x as f64, query.y as f64, query.z as f64];
+        let neighbor_indices = self.kdtree
+            .within(&query_coords, radius.powi(2), &squared_euclidean)
             .unwrap()
             .iter()
             .map(|item| item.1.clone())
-            .collect();
-        neighbors
+            .collect::<Vec<_>>();
+
+        neighbor_indices
     }
 }
 
