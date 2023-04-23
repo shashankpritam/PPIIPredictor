@@ -12,6 +12,11 @@ use std::rc::Rc;
 use std::collections::HashSet;
 use lazy_static::lazy_static;
 
+// In src/main.rs
+use kdtree::KdTree;
+use kdtree::distance::squared_euclidean;
+use std::sync::Arc;
+
 lazy_static! {
     static ref DONOR_DICT: HashSet<(&'static str, &'static str)> = {
         let donors = [
@@ -97,20 +102,12 @@ fn main() {
     let query_structures =
         parse_pdb_file(&file_content).expect("Error parsing PDB file");
     //println!("Structures: {:?}", query_structures);
-
-    for (model_index, model) in query_structures.models.iter().enumerate() {
-        for (chain_index, chain) in model.chains.iter().enumerate() {
-            for (residue_index, residue) in chain.residues.iter().enumerate() {
-                for (atom_index, atom) in residue.atoms.iter().enumerate() {
-                    //println!("      Atom {}: {:?}", atom_index + 1, atom);
-                    println!(" Booyah");
-                }
-            }
-        }
-    }
-
-    // The rest of the code...
+    let neighbourhood_look_up_cut_off = 3.5;
+    let h_bond_cut_off = 2.5;
+    neighbour_search(&query_structures, neighbourhood_look_up_cut_off, h_bond_cut_off);
 }
+
+
 
 fn download_or_load_pdb(pdb_id: &str, pdb_file_path: &str) -> File {
     let path = Path::new(pdb_file_path);
@@ -461,54 +458,74 @@ pub fn carve(
 
 
 
-fn neighbour_search(structure: &Structure, neighbourhood_look_up_cut_off: f32, h_bond_cut_off: f32) {
-    let donor_dict: HashSet<(String, String)> = [
-        // ... populate donor_dict with relevant data
-    ].iter().cloned().collect();
 
-    for model in &structure.models {
-        for chain in &model.chains {
-            for residue in &chain.residues {
-                if residue.name == "TRP" {
-                    let the_ne1_atom = residue.get_atom_by_name("NE1").unwrap();
-                    println!(
-                        "Residue Tryptophan is present at: {:?}",
-                        the_ne1_atom.get_full_id()
-                    );
 
-                    let chain_atoms: Vec<Rc<Atom>> = model.get_atoms().into_iter().map(Rc::new).collect();
-                    let neighbourhood_search = KdTree::new(chain_atoms.len());
-                    let neighbour_atoms = neighbourhood_search.nearest(
-                        &[the_ne1_atom.x, the_ne1_atom.y, the_ne1_atom.z],
-                        neighbourhood_look_up_cut_off,
-                        &squared_euclidean
-                    ).unwrap_or_default();
+// Define a custom atom structure to hold a reference to its parent residue
+struct AtomWithParent<'a> {
+    atom: &'a Atom,
+    parent_residue: &'a Residue,
+}
 
-                    for n_atom in &neighbour_atoms {
-                        let mut rejection_list = vec![];
-                        let atom_dic = (n_atom.parent_residue.name.clone(), n_atom.name.clone());
-                        if Rc::ptr_eq(n_atom, &the_ne1_atom) || !donor_dict.contains(&atom_dic) {
-                            continue;
-                        }
+fn neighbour_search(structure: &Structure, cutoff: f32, h_bond_cutoff: f32) {
+    let mut kdtree = KdTree::new(3);
 
-                        let internal_look_up = neighbourhood_search.nearest(
-                            &[n_atom.x, n_atom.y, n_atom.z],
-                            h_bond_cut_off,
-                            &squared_euclidean
-                        ).unwrap_or_default();
-
-                        for internal_atoms in &internal_look_up {
-                            if !Rc::ptr_eq(internal_atoms, n_atom) {
-                                // ... process internal_atoms
-                            }
-                        }
-
-                        if !rejection_list.contains(n_atom) {
-                            // ... process n_atom
-                        }
-                    }
+    for (model_idx, model) in structure.models.iter().enumerate() {
+        for (chain_idx, chain) in model.chains.iter().enumerate() {
+            for (residue_idx, residue) in chain.residues.iter().enumerate() {
+                for (atom_idx, atom) in residue.atoms.iter().enumerate() {
+                    kdtree.add(
+                        [atom.x, atom.y, atom.z],
+                        AtomWithParent {
+                            atom,
+                            parent_residue: residue,
+                        },
+                    ).unwrap();
                 }
             }
         }
     }
+
+    let ne1_atom_option = structure
+        .models
+        .iter()
+        .flat_map(|model| model.chains.iter())
+        .flat_map(|chain| chain.residues.iter())
+        .find(|residue| residue.name == "TRP" && residue.atoms.iter().any(|atom| atom.name == "NE1"))
+        .and_then(|residue| {
+            residue
+                .atoms
+                .iter()
+                .find(|atom| atom.name == "NE1")
+        });
+
+    if let Some(the_ne1_atom) = ne1_atom_option {
+        let nearby_atoms = kdtree
+            .within(&[the_ne1_atom.x, the_ne1_atom.y, the_ne1_atom.z], cutoff * cutoff, &squared_euclidean)
+            .unwrap_or_else(|_| Vec::new());
+
+        for (distance_squared, atom_with_parent) in nearby_atoms {
+            let n_atom = atom_with_parent.atom;
+            let parent_residue = atom_with_parent.parent_residue;
+            if distance_squared <= h_bond_cutoff * h_bond_cutoff {
+                let atom_dic = (
+                    parent_residue.name.clone(),
+                    n_atom.name.clone(),
+                );
+
+                if (n_atom as *const Atom) != (the_ne1_atom as *const Atom)
+                    && !DONOR_DICT.contains(&(&parent_residue.name as &str, &n_atom.name as &str))
+                {
+                    println!(
+                        "The atom {} is within the h_bond_cutoff of the_ne1_atom",
+                        n_atom.name
+                    );
+                }
+
+            }
+        }
+    } else {
+        eprintln!("NE1 atom not found in the structure.");
+    }
 }
+
+

@@ -5,6 +5,8 @@ use kdtree::KdTree;
 use std::sync::Arc;
 use cgmath::{Point3, EuclideanSpace};
 
+
+
 #[derive(Debug, Clone)]
 pub struct Structure {
     pub models: Vec<Model>,
@@ -90,6 +92,13 @@ pub struct Atom {
     pub element: String,
     pub charge: String,
 }
+
+impl Atom {
+    pub fn get_atom_id(&self) -> isize {
+        self.serial
+    }
+}
+
 
 impl PartialEq for Atom {
     fn eq(&self, other: &Self) -> bool {
