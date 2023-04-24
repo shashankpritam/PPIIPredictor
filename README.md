@@ -51,4 +51,5 @@ The PPII Predictor is released under the Lesser GPL, version 2.1. (LGPL-2.1)
 
 ## Citation
 Please cite the following article when using the PPII Predictor in your research:
+
 Pritam, Shashank. “Prediction of Polyproline Type II Helix Receptors,” 2022. http://dr.iiserpune.ac.in:8080/xmlui/handle/123456789/6766.
