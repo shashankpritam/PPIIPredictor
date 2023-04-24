@@ -30,24 +30,25 @@ To use the PPII Predictor, follow these steps:
 Clone the repository:
 
 ```bash
+
 git clone https://github.com/shashankpritam/PPIIPredictor.git
+
 ```
 ## Usage
+
 Run the PPII Predictor:
+
 ```rust
+
 cargo build
+
 cargo run "PDB_ID"
+
 ```
+
 ## License
 The PPII Predictor is released under the Lesser GPL, version 2.1. (LGPL-2.1)
 
 ## Citation
 Please cite the following article when using the PPII Predictor in your research:
-
-bibtex
-@article{pritam2023prediction,
-  title={Prediction of Polyproline Type II Helix Receptors},
-  author={Shashank Pritam},
-  year={2023},
-  url={https://scholar.google.com/citations?view_op=view_citation&hl=en&user=E5oKLgkAAAAJ&citation_for_view=E5oKLgkAAAAJ:u5HHmVD_uO8C},
-}
+Pritam, Shashank. “Prediction of Polyproline Type II Helix Receptors,” 2022. http://dr.iiserpune.ac.in:8080/xmlui/handle/123456789/6766.
