@@ -4,6 +4,7 @@ use std::path::Path;
 use std::io::{BufReader, BufRead, Read, Write, BufWriter};
 use std::fs::{self, File, create_dir_all};
 use std::process::Command;
+use std::collections::HashMap;
 
 use reqwest;
 use pp2predictor::pdb_parser::{parse_pdb_file, Structure, Model, Chain, Residue, Atom, write_pdb, NeighborSearch};
@@ -47,6 +48,9 @@ lazy_static! {
 const LOG_FILE_NAME: &str = "log.txt";
 const PARAM_FILE_NAME: &str = "param.txt";
 const DATABASE_FOLDER: &str = "pdb_files";
+const H_BOND_ACCEPTOR_LIST: &str = "H_bond_Acceptor_List";
+const H_BOND_DONOR_LIST: &str = "H_bond_Donor_List";
+const H_BOND_INFO: &str = "data_hbond/hbond_trp_all.txt";
 
 const PDB_INFO: &[(&str, &str, &str)] = &[
     ("4B6H", "A", "C"), ("4WSF", "A", "B"), ("5J3T", "A", "C"), 
@@ -65,6 +69,7 @@ const PDB_INFO: &[(&str, &str, &str)] = &[
 ];
 
 
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     let input_pdb_given = args
@@ -81,6 +86,7 @@ fn main() {
     let param_file_path = Path::new(PARAM_FILE_NAME);
     let param_file = File::open(&param_file_path).expect("Error opening parameter file");
     let _param_reader = BufReader::new(param_file);
+
 
     let input_pdb_file_path = format!("{}/{}.pdb", DATABASE_FOLDER, input_pdb_given);
     let _input_pdb_file = download_or_load_pdb(&input_pdb_given, &input_pdb_file_path);
@@ -104,7 +110,7 @@ fn main() {
     //println!("Structures: {:?}", query_structures);
     let neighbourhood_look_up_cut_off = 3.5;
     let h_bond_cut_off = 2.5;
-    neighbour_search(&query_structures, neighbourhood_look_up_cut_off, h_bond_cut_off);
+    neighbour_search(&query_structures);//, neighbourhood_look_up_cut_off, h_bond_cut_off);
 }
 
 
@@ -171,6 +177,32 @@ fn load_pdb_chains() -> (Vec<String>, Vec<String>, Vec<String>) {
 }
 
 
+
+fn read_acceptor_list(content: &str) -> HashMap<String, (String, String)> {
+    let mut acceptor_list = HashMap::new();
+
+    for line in content.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        acceptor_list.insert(parts[0].to_string(), (parts[1].to_string(), parts[2].to_string()));
+    }
+
+    acceptor_list
+}
+
+fn read_donor_list(content: &str) -> HashMap<String, String> {
+    let mut donor_list = HashMap::new();
+
+    for line in content.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        donor_list.insert(parts[0].to_string(), parts[1].to_string());
+    }
+
+    donor_list
+}
+
+
+
+
 // This function runs the CLICK program on two input PDB files and discards the output
 fn click4all(input_pdb1: &str, input_pdb2: &str) {
     let cmd = format!("./click {} {} > /dev/null 2>&1", input_pdb1, input_pdb2);
@@ -186,7 +218,7 @@ fn click4all(input_pdb1: &str, input_pdb2: &str) {
 // See comment above hbond_files
 fn hbond_trp(input_pdb: &str) -> Vec<String> {
     let mut list_of_trp: Vec<String> = Vec::new();
-    if let Ok(file) = File::open("data_hbond/hbond_trp_all.txt") {
+    if let Ok(file) = File::open(H_BOND_INFO) {
         let lines = BufReader::new(file).lines().filter_map(|line| line.ok());
 
         for line in lines {
@@ -209,6 +241,7 @@ fn hbond_trp(input_pdb: &str) -> Vec<String> {
     }
     list_of_trp
 }
+
 
 // This function takes input of template pdb id and an side chain donor atom (scda), side chain donor residue (scdr) of the scda
 // and the suffix which acts as identifier as template file. The last parameter save_path is path where the ouput file is
@@ -466,66 +499,31 @@ struct AtomWithParent<'a> {
     parent_residue: &'a Residue,
 }
 
-fn neighbour_search(structure: &Structure, cutoff: f32, h_bond_cutoff: f32) {
-    let mut kdtree = KdTree::new(3);
 
+fn neighbour_search(structure: &Structure) {
+    //println!("Entering neighbour_search function");
     for (model_idx, model) in structure.models.iter().enumerate() {
+        //println!("Checking model #{}", model_idx);
         for (chain_idx, chain) in model.chains.iter().enumerate() {
+            //println!("Checking chain #{}", chain_idx);
             for (residue_idx, residue) in chain.residues.iter().enumerate() {
-                for (atom_idx, atom) in residue.atoms.iter().enumerate() {
-                    kdtree.add(
-                        [atom.x, atom.y, atom.z],
-                        AtomWithParent {
-                            atom,
-                            parent_residue: residue,
-                        },
-                    ).unwrap();
-                }
-            }
-        }
-    }
-
-    let ne1_atom_option = structure
-        .models
-        .iter()
-        .flat_map(|model| model.chains.iter())
-        .flat_map(|chain| chain.residues.iter())
-        .find(|residue| residue.name == "TRP" && residue.atoms.iter().any(|atom| atom.name == "NE1"))
-        .and_then(|residue| {
-            residue
-                .atoms
-                .iter()
-                .find(|atom| atom.name == "NE1")
-        });
-
-    if let Some(the_ne1_atom) = ne1_atom_option {
-        let nearby_atoms = kdtree
-            .within(&[the_ne1_atom.x, the_ne1_atom.y, the_ne1_atom.z], cutoff * cutoff, &squared_euclidean)
-            .unwrap_or_else(|_| Vec::new());
-
-        for (distance_squared, atom_with_parent) in nearby_atoms {
-            let n_atom = atom_with_parent.atom;
-            let parent_residue = atom_with_parent.parent_residue;
-            if distance_squared <= h_bond_cutoff * h_bond_cutoff {
-                let atom_dic = (
-                    parent_residue.name.clone(),
-                    n_atom.name.clone(),
-                );
-
-                if (n_atom as *const Atom) != (the_ne1_atom as *const Atom)
-                    && !DONOR_DICT.contains(&(&parent_residue.name as &str, &n_atom.name as &str))
-                {
-                    println!(
-                        "The atom {} is within the h_bond_cutoff of the_ne1_atom",
-                        n_atom.name
-                    );
+                //println!("Checking residue #{}", residue_idx);
+                if residue.name == "TRP" {
+                    println!("Found Tryptophan residue");
+                    println!("Atom names in Tryptophan residue: {:?}", residue.atoms.iter().map(|atom| &atom.name).collect::<Vec<_>>());
+                    if let Some(the_ne1_atom) = residue.get_atom_by_name("NE1") {
+                        println!(
+                            "Residue Tryptophan is present at: chain {}, residue name {}, atom serial {}",
+                            the_ne1_atom.chain_id, the_ne1_atom.res_name, the_ne1_atom.serial
+                        );
+                    } else {
+                        println!("NE1 atom not found in Tryptophan residue");
+                    }
                 }
 
             }
         }
-    } else {
-        eprintln!("NE1 atom not found in the structure.");
     }
+    println!("Exiting neighbour_search function");
 }
-
 

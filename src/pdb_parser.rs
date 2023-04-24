@@ -99,7 +99,6 @@ impl Atom {
     }
 }
 
-
 impl PartialEq for Atom {
     fn eq(&self, other: &Self) -> bool {
         self.serial == other.serial
@@ -118,6 +117,41 @@ impl PartialEq for Atom {
             && self.charge == other.charge
     }
 }
+
+pub fn parse_atom(line: &str) -> Atom {
+    let serial: isize = line[6..11].trim().parse().unwrap();
+    let name = line[12..16].trim().to_string();
+    let alt_loc = line[16..17].chars().next().unwrap_or(' ');
+    let res_name = line[17..20].trim().to_string();
+    let chain_id = line[21..22].chars().next().unwrap_or(' ');
+    let res_seq: isize = line[22..26].trim().parse().unwrap();
+    let icode = line[26..27].chars().next().unwrap_or(' ');
+    let x: f32 = line[30..38].trim().parse().unwrap();
+    let y: f32 = line[38..46].trim().parse().unwrap();
+    let z: f32 = line[46..54].trim().parse().unwrap();
+    let occupancy: f32 = line[54..60].trim().parse().unwrap_or(0.0);
+    let temp_factor: f32 = line[60..66].trim().parse().unwrap_or(0.0);
+    let element = line[76..78].trim().to_string();
+    let charge = line[78..80].trim().to_string();
+
+    Atom {
+        serial,
+        name,
+        alt_loc,
+        res_name,
+        chain_id,
+        res_seq,
+        icode,
+        x,
+        y,
+        z,
+        occupancy,
+        temp_factor,
+        element,
+        charge,
+    }
+}
+
 
 impl Residue {
     pub fn get_atom_by_name(&self, name: &str) -> Option<&Atom> {
@@ -138,6 +172,7 @@ impl Model {
         self.get_atoms().into_iter().find(|&atom| atom.name == name)
     }
 }
+
 
 
 
@@ -182,23 +217,7 @@ pub fn parse_pdb_file(file_content: &str) -> AnyResult<Structure> {
             }
             // An atom is encountered
             "ATOM  " | "HETATM" => {
-                let atom = Atom {
-                    serial: line.chars().skip(6).take(5).collect::<String>().trim().parse().map_err(AnyhowError::new)?,
-                    name: line.chars().skip(12).take(4).collect(),
-                    alt_loc: line.chars().nth(16).unwrap_or(' '),
-                    res_name: line.chars().skip(17).take(3).collect(),
-                    chain_id: line.chars().nth(21).unwrap_or(' '),
-                    res_seq: line.chars().skip(22).take(4).collect::<String>().trim().parse().map_err(Box::new)?,
-                    icode: line.chars().nth(26).unwrap_or(' '),
-                    x: line.chars().skip(30).take(8).collect::<String>().trim().parse().map_err(Box::new)?,
-                    y: line.chars().skip(38).take(8).collect::<String>().trim().parse().map_err(Box::new)?,
-                    z: line.chars().skip(46).take(8).collect::<String>().trim().parse().map_err(Box::new)?,
-                    occupancy: line.chars().skip(54).take(6).collect::<String>().trim().parse().map_err(Box::new)?,
-                    temp_factor: line.chars().skip(60).take(6).collect::<String>().trim().parse().map_err(Box::new)?,
-                    element: line.chars().skip(76).take(2).collect(),
-                    charge: line.chars().skip(78).take(2).collect(),
-                };
-                //println!("Atom encountered: {:?}", atom);
+                let atom = parse_atom(&line);
 
                 // Check if the current residue exists in the current chain
                 if let Some(index) = current_chain.residues.iter().position(|r| r.id == current_residue.id) {
@@ -213,7 +232,6 @@ pub fn parse_pdb_file(file_content: &str) -> AnyResult<Structure> {
                 // Update the current residue's ID and name
                 current_residue.id = atom.res_seq;
                 current_residue.name = atom.res_name.clone();
-                //println!("Current residue updated: {:?}", current_residue);
             }
             // A chain terminator is encountered
             "TER   " => {
@@ -226,7 +244,6 @@ pub fn parse_pdb_file(file_content: &str) -> AnyResult<Structure> {
                 };
                 //println!("Resetting current_chain: {:?}", current_chain);
             }
-
             "ENDMDL" => {
                 current_chain.residues.push(current_residue.clone());
                 current_model.chains.push(current_chain.clone());
@@ -252,8 +269,9 @@ pub fn parse_pdb_file(file_content: &str) -> AnyResult<Structure> {
                 //println!("Resetting current_residue, current_chain, and current_model");
             }
             _ => (),
-        }
+        } // <- Add this closing brace
     }
+
     // Check if the current residue has any atoms and add it to the current chain
     if !current_residue.atoms.is_empty() {
         current_chain.residues.push(current_residue.clone());
@@ -273,39 +291,8 @@ pub fn parse_pdb_file(file_content: &str) -> AnyResult<Structure> {
 }
 
 
-pub fn parse_atom(line: &str) -> Atom {
-    let serial: isize = line[6..11].trim().parse().unwrap();
-    let name = line[12..16].trim().to_string();
-    let alt_loc = line[16..17].chars().next().unwrap_or(' ');
-    let res_name = line[17..20].trim().to_string();
-    let chain_id = line[21..22].chars().next().unwrap_or(' ');
-    let res_seq: isize = line[22..26].trim().parse().unwrap();
-    let icode = line[26..27].chars().next().unwrap_or(' ');
-    let x: f32 = line[30..38].trim().parse().unwrap();
-    let y: f32 = line[38..46].trim().parse().unwrap();
-    let z: f32 = line[46..54].trim().parse().unwrap();
-    let occupancy: f32 = line[54..60].trim().parse().unwrap_or(0.0);
-    let temp_factor: f32 = line[60..66].trim().parse().unwrap_or(0.0);
-    let element = line[76..78].trim().to_string();
-    let charge = line[78..80].trim().to_string();
 
-    Atom {
-        serial,
-        name,
-        alt_loc,
-        res_name,
-        chain_id,
-        res_seq,
-        icode,
-        x,
-        y,
-        z,
-        occupancy,
-        temp_factor,
-        element,
-        charge,
-    }
-}
+
 
 
 
@@ -379,3 +366,26 @@ impl NeighborSearch {
     }
 }
 
+fn calculate_distance(atom1: &Atom, atom2: &Atom) -> f32 {
+    let dx = atom1.x - atom2.x;
+    let dy = atom1.y - atom2.y;
+    let dz = atom1.z - atom2.z;
+    (dx * dx + dy * dy + dz * dz).sqrt()
+}
+
+fn calculate_angle(atom1: &Atom, atom2: &Atom, atom3: &Atom) -> f32 {
+    let dx1 = atom1.x - atom2.x;
+    let dy1 = atom1.y - atom2.y;
+    let dz1 = atom1.z - atom2.z;
+
+    let dx2 = atom3.x - atom2.x;
+    let dy2 = atom3.y - atom2.y;
+    let dz2 = atom3.z - atom2.z;
+
+    let dot_product = dx1 * dx2 + dy1 * dy2 + dz1 * dz2;
+    let magnitude1 = (dx1 * dx1 + dy1 * dy1 + dz1 * dz1).sqrt();
+    let magnitude2 = (dx2 * dx2 + dy2 * dy2 + dz2 * dz2).sqrt();
+
+    let cos_angle = dot_product / (magnitude1 * magnitude2);
+    cos_angle.acos().to_degrees()
+}
