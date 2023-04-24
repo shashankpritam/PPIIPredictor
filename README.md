@@ -1,15 +1,12 @@
 # PPII Predictor
-
+@Shashank Pritam - (shashankpritam[at]gmail[dot]com)
+This repository contains the code for predicting the binding sites of Poly-L-Proline Helix (PPII) peptides in protein structures. PPII helices are a class of peptides that play a crucial role in cellular functions such as protein-nucleic acid interaction and protein assembly. They are often present on various protein binding surfaces and act as common binding motifs responsible for various biological activities. This study aims to predict PPII binding sites and analyze their structural conservation across different protein families.
 This program takes a pdb structure as input and return possible binding site of the PPII Helix.
 Input - 4 letter PDB ID
 Output - In case the given structure does not contain a PPII binding site - You'll get notified.
 In case the given structure does contain a PPII binding site - You'll get the structure with PPII bound to it on the "best possible orientation" at the predicted binding site of the PPII.
 
-@Shashank Pritam - (shashankpritam[at]gmail[dot]com)
-
 For any help please contact through the provided email ID.
-
-This repository contains the code for predicting the binding sites of Poly-L-Proline Helix (PPII) peptides in protein structures. PPII helices are a class of peptides that play a crucial role in cellular functions such as protein-nucleic acid interaction and protein assembly. They are often present on various protein binding surfaces and act as common binding motifs responsible for various biological activities. This study aims to predict PPII binding sites and analyze their structural conservation across different protein families.
 
 ## Table of Contents
 
