@@ -7,7 +7,7 @@ use std::process::Command;
 use std::collections::HashMap;
 
 use reqwest;
-use pp2predictor::pdb_parser::{parse_pdb_file, Structure, Model, Chain, Residue, Atom, write_pdb, NeighborSearch};
+use pp2predictor::pdb_parser::{parse_pdb_file, Structure, Model, Chain, Residue, Atom, write_pdb, NeighborSearch, calculate_distance, calculate_angle};
 use std::f32::consts::PI;
 use std::rc::Rc;
 use std::collections::HashSet;
@@ -501,29 +501,69 @@ struct AtomWithParent<'a> {
 
 
 fn neighbour_search(structure: &Structure) {
-    //println!("Entering neighbour_search function");
-    for (model_idx, model) in structure.models.iter().enumerate() {
-        //println!("Checking model #{}", model_idx);
-        for (chain_idx, chain) in model.chains.iter().enumerate() {
-            //println!("Checking chain #{}", chain_idx);
-            for (residue_idx, residue) in chain.residues.iter().enumerate() {
-                //println!("Checking residue #{}", residue_idx);
+    let mut all_atoms: Vec<Atom> = Vec::new();
+
+    for model in &structure.models {
+        for chain in &model.chains {
+            for residue in &chain.residues {
+                all_atoms.extend(residue.atoms.clone());
+            }
+        }
+    }
+
+    let neighbor_search = NeighborSearch::new(&all_atoms);
+
+    for model in structure.models.iter() {
+        for chain in model.chains.iter() {
+            for residue in chain.residues.iter() {
                 if residue.name == "TRP" {
                     println!("Found Tryptophan residue");
-                    println!("Atom names in Tryptophan residue: {:?}", residue.atoms.iter().map(|atom| &atom.name).collect::<Vec<_>>());
                     if let Some(the_ne1_atom) = residue.get_atom_by_name("NE1") {
                         println!(
                             "Residue Tryptophan is present at: chain {}, residue name {}, atom serial {}",
                             the_ne1_atom.chain_id, the_ne1_atom.res_name, the_ne1_atom.serial
                         );
+
+                        let neighbors = neighbor_search.search_neighbors(&the_ne1_atom, 12.0);
+                        let mut unique_neighbors: HashSet<(String, String, char, isize, isize, isize)> = HashSet::new();
+                        let mut unique_donor_neighbors: HashSet<(String, String, char, isize, isize, isize)> = HashSet::new();
+
+                        for neighbor in neighbors {
+                            let distance = calculate_distance(&the_ne1_atom, &neighbor);
+
+                            if distance > 0.0 {
+                                let neighbor_tuple = (
+                                    neighbor.name.clone(),
+                                    neighbor.res_name.clone(),
+                                    neighbor.chain_id,
+                                    model.serial_number, // Corrected model serial number field
+                                    neighbor.res_seq, // Corrected residue ID field
+                                    neighbor.serial, // Added atom serial number
+                                );
+
+                                if DONOR_DICT.contains(&(neighbor.res_name.as_str(), neighbor.name.as_str())) {
+                                    unique_donor_neighbors.insert(neighbor_tuple.clone());
+                                }
+
+                                unique_neighbors.insert(neighbor_tuple);
+                            }
+                        }
+
+                        for (name, res_name, chain_id, model_serial, residue_id, atom_serial) in unique_donor_neighbors {
+                            println!(
+                                "Neighbor found: Model {}, Atom {}, Residue {}, Chain {}, Residue ID {}, Atom Serial {}",
+                                model_serial, name, res_name, chain_id, residue_id, atom_serial
+                            );
+                        }
+
+
                     } else {
                         println!("NE1 atom not found in Tryptophan residue");
                     }
                 }
-
             }
         }
     }
-    println!("Exiting neighbour_search function");
 }
+
 

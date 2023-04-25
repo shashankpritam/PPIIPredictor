@@ -366,14 +366,14 @@ impl NeighborSearch {
     }
 }
 
-fn calculate_distance(atom1: &Atom, atom2: &Atom) -> f32 {
+pub fn calculate_distance(atom1: &Atom, atom2: &Atom) -> f32 {
     let dx = atom1.x - atom2.x;
     let dy = atom1.y - atom2.y;
     let dz = atom1.z - atom2.z;
     (dx * dx + dy * dy + dz * dz).sqrt()
 }
 
-fn calculate_angle(atom1: &Atom, atom2: &Atom, atom3: &Atom) -> f32 {
+pub fn calculate_angle(atom1: &Atom, atom2: &Atom, atom3: &Atom) -> f32 {
     let dx1 = atom1.x - atom2.x;
     let dy1 = atom1.y - atom2.y;
     let dz1 = atom1.z - atom2.z;
@@ -389,3 +389,4 @@ fn calculate_angle(atom1: &Atom, atom2: &Atom, atom3: &Atom) -> f32 {
     let cos_angle = dot_product / (magnitude1 * magnitude2);
     cos_angle.acos().to_degrees()
 }
+
