@@ -5,7 +5,7 @@ use std::io::{BufReader, BufRead, Read, Write, BufWriter};
 use std::fs::{self, File, create_dir_all};
 use std::process::Command;
 use std::collections::HashMap;
-
+use glob::glob;
 use reqwest;
 use pp2predictor::pdb_parser::{parse_pdb_file, Structure, Model, Chain, Residue, Atom, write_pdb, NeighborSearch, calculate_distance, calculate_angle};
 use std::f32::consts::PI;
@@ -17,6 +17,15 @@ use lazy_static::lazy_static;
 use kdtree::KdTree;
 use kdtree::distance::squared_euclidean;
 use std::sync::Arc;
+
+lazy_static! {
+    static ref ALL_DATASET_PDB: Vec<String> = {
+        glob("dataset/*.pdb")
+            .expect("Failed to read glob pattern")
+            .map(|entry| entry.expect("Failed to read entry").display().to_string())
+            .collect()
+    };
+}
 
 lazy_static! {
     static ref DONOR_DICT: HashSet<(&'static str, &'static str)> = {
@@ -110,7 +119,8 @@ fn main() {
     //println!("Structures: {:?}", query_structures);
     let neighbourhood_look_up_cut_off = 3.5;
     let h_bond_cut_off = 2.5;
-    neighbour_search(&query_structures);//, neighbourhood_look_up_cut_off, h_bond_cut_off);
+    let all_dataset_pdb: Vec<&str> = ALL_DATASET_PDB.iter().map(|s| s.as_ref()).collect();
+    neighbour_search(&query_structures, &all_dataset_pdb);
 }
 
 
@@ -253,14 +263,18 @@ fn hbond_trp(input_pdb: &str) -> Vec<String> {
 // Suffix is used for renaming the output file.
 // SCDA = Side Chain Donor ATOM
 // SCDR = Side Chain Donor RESIDUE
-fn mask_temp_atoms(structure: &mut Structure, scda: &str, scdr: &str, suffix: &str, save_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn mask_temp_atoms(structure: &mut Structure, scda: &str, scdr: &str, suffix: &str, save_path: &str, the_pdb_id: &str,) -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = env::args().collect();
+    let input_pdb_given = args
+        .get(1)
+        .expect("Please provide a PDB ID as an argument")
+        .to_owned();
     let save_dir = Path::new("click_output").join(save_path);
     create_dir_all(&save_dir)?;
-
-    let file_name = format!("{}{}.pdb", structure.models[0].chains[0].residues[0].atoms[0].name, suffix);
+    let file_name = format!("{}{}{}{}{}{}.pdb", input_pdb_given, the_pdb_id, scda, scdr, save_path, suffix);
     let output_pdb_path = save_dir.join(file_name);
-    let mut output_pdb_file = File::create(output_pdb_path)?;
 
+    let mut output_pdb_file = File::create(output_pdb_path)?;
     for model in &mut structure.models {
         for chain in &mut model.chains {
             for residue in &mut chain.residues {
@@ -291,6 +305,7 @@ fn mask_temp_atoms(structure: &mut Structure, scda: &str, scdr: &str, suffix: &s
 
     Ok(())
 }
+
 
 // This function takes input of query pdb id and an Tryptophan residue as Biopython Residue Object - the_trp
 // Other input parameters are - the_nbr; which the scdr but as biopython RESIDUE object and the_nbr_dnr -
@@ -500,9 +515,14 @@ struct AtomWithParent<'a> {
 }
 
 
-fn neighbour_search(structure: &Structure) {
-    let mut all_atoms: Vec<Atom> = Vec::new();
+fn neighbour_search(structure: &Structure, all_dataset_pdb: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = env::args().collect();
+    let input_pdb_given = args
+        .get(1)
+        .expect("Please provide a PDB ID as an argument")
+        .to_owned();
 
+    let mut all_atoms: Vec<Atom> = Vec::new();
     for model in &structure.models {
         for chain in &model.chains {
             for residue in &chain.residues {
@@ -554,6 +574,29 @@ fn neighbour_search(structure: &Structure) {
                                 "Neighbor found: Model {}, Atom {}, Residue {}, Chain {}, Residue ID {}, Atom Serial {}",
                                 model_serial, name, res_name, chain_id, residue_id, atom_serial
                             );
+                            for dataset_file in ALL_DATASET_PDB.iter() {
+                                let the_pdb_id = &dataset_file[(dataset_file.len() - 8)..(dataset_file.len() - 4)];
+                                let file_name = format!(
+                                    "{}_{}_{}_{}_{}_{}_{}_{}_{}_{}",
+                                    input_pdb_given,
+                                    model.serial_number,
+                                    the_ne1_atom.chain_id,
+                                    residue.id,
+                                    the_ne1_atom.res_name,
+                                    "NE1",
+                                    chain_id,
+                                    residue_id,
+                                    res_name,
+                                    name,
+                                );
+                                println!("{}", file_name);
+
+
+                                let file_content_to_modify = fs::read_to_string(&dataset_file).expect("Error reading PDB file");
+                                let mut structure_to_modify =
+                                    parse_pdb_file(&file_content_to_modify).expect("Error parsing PDB file");
+                                //mask_temp_atoms(&mut structure_to_modify, &name, &res_name, "_rnmd_ds", &the_path, &the_pdb_id)?;
+                            }
                         }
 
 
@@ -564,6 +607,7 @@ fn neighbour_search(structure: &Structure) {
             }
         }
     }
+    Ok(())
 }
 
 
